@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"compress/gzip"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -20,11 +19,11 @@ import (
 	"time"
 
 	"github.com/asciimoo/wuzz/config"
+	"github.com/asciimoo/wuzz/formatter"
 
 	"crypto/tls"
+
 	"github.com/jroimartin/gocui"
-	"github.com/mattn/go-runewidth"
-	"github.com/nwidger/jsoncolor"
 )
 
 const VERSION = "0.1.0"
@@ -543,26 +542,14 @@ func (a *App) PrintBody(g *gocui.Gui) {
 		vrb, _ := g.View(RESPONSE_BODY_VIEW)
 		vrb.Clear()
 
-		responseBody := req.RawResponseBody
-		// pretty-print json
-		if strings.Contains(req.ContentType, "application/json") && a.config.General.FormatJSON {
-			formatter := jsoncolor.NewFormatter()
-			buf := bytes.NewBuffer(make([]byte, 0, len(req.RawResponseBody)))
-			err := formatter.Format(buf, req.RawResponseBody)
-			if err == nil {
-				responseBody = buf.Bytes()
-			}
-		}
+		responseFormatter := formatter.New(a.config, req.ContentType)
+		vrb.Title = RESPONSE_BODY_VIEW + responseFormatter.Title()
 
-		is_binary := strings.Index(req.ContentType, "text") == -1 && strings.Index(req.ContentType, "application") == -1
 		search_text := getViewValue(g, SEARCH_VIEW)
-		if search_text == "" || is_binary {
-			vrb.Title = RESPONSE_BODY_VIEW
-			if is_binary {
-				vrb.Title += " [binary content]"
-				fmt.Fprint(vrb, hex.Dump(req.RawResponseBody))
-			} else {
-				vrb.Write(responseBody)
+		if search_text == "" || !responseFormatter.Searchable() {
+			err := responseFormatter.Format(vrb, req.RawResponseBody)
+			if err != nil {
+				return err
 			}
 			if _, err := vrb.Line(0); !a.config.General.PreserveScrollPosition || err != nil {
 				vrb.SetOrigin(0, 0)
